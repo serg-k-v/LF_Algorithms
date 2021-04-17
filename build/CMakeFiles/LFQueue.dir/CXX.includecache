@@ -1,0 +1,22 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/akuma/WorkFLow/ThreadedAlghorithms/LockFreeQueue.cpp
+LockFreeQueue.hpp
+/home/akuma/WorkFLow/ThreadedAlghorithms/LockFreeQueue.hpp
+iostream
+-
+thread
+-
+
+/home/akuma/WorkFLow/ThreadedAlghorithms/LockFreeQueue.hpp
+atomic
+-
+list
+-
+

@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/akuma/WorkFLow/ThreadedAlghorithms/build",
+  "command": "/usr/bin/g++-9    -g -fno-omit-frame-pointer -fsanitize=address   -std=gnu++14 -o CMakeFiles/FCQueue.dir/FlatCombining.cpp.o -c /home/akuma/WorkFLow/ThreadedAlghorithms/FlatCombining.cpp",
+  "file": "/home/akuma/WorkFLow/ThreadedAlghorithms/FlatCombining.cpp"
+},
+{
+  "directory": "/home/akuma/WorkFLow/ThreadedAlghorithms/build",
+  "command": "/usr/bin/g++-9    -g -fno-omit-frame-pointer -fsanitize=address   -std=gnu++14 -o CMakeFiles/LFQueue.dir/LockFreeQueue.cpp.o -c /home/akuma/WorkFLow/ThreadedAlghorithms/LockFreeQueue.cpp",
+  "file": "/home/akuma/WorkFLow/ThreadedAlghorithms/LockFreeQueue.cpp"
+}
+]
