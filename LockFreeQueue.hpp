@@ -2,7 +2,11 @@
 #define LOCKFREEQUEUE_HPP
 
 #include <atomic>
+#include <iostream>
 #include <list>
+
+#define DEF_SIZE 256
+#define MAX_SIZE 1024
 
 template <typename T>
 struct Node
@@ -24,27 +28,82 @@ struct Node
 
 namespace concurrent
 {
+    template <class T>
+    struct MemNode
+    {
+        bool isUsed;
+        Node<T>* node;
+    };
+
     /**
      * Class stored almost allocated memory by OS
      * for reuse it on pop/dequeue operation.
+     * Must use insted operator new for avoid errors allocation memory.
      */
     template <class T>
     class DoubledMemoryList
     {
+        
         Node<T>* tail_handle;
         Node<T>* head_handle;
-        std::list<Node<T>*> _d_mem;
+        std::list<MemNode<T>*> _d_mem;
+        size_t _capacity;
     public:
         DoubledMemoryList();
         ~DoubledMemoryList();
+
+        Node<T>* get_node();
+        void free_node(const Node<T>*);
+        void resize();
     };
     
     template <typename T>
-    DoubledMemoryList<T>::DoubledMemoryList(){}
-    
+    DoubledMemoryList<T>::DoubledMemoryList(){
+        _capacity = DEF_SIZE;
+        tail_handle = new Node<T>;
+        head_handle = new Node<T>;
+
+        for (size_t i = 0; i < _capacity; i++)
+            _d_mem.insert({false, new Node<T>});
+    }
+
     template <typename T>
     DoubledMemoryList<T>::~DoubledMemoryList(){}
     
+    template <typename T>
+    Node<T>* DoubledMemoryList<T>::get_node()
+    {
+        auto it = _d_mem.begin();
+        while (it != _d_mem.end())
+            if (!it->isUsed)
+                return it->Node;
+        resize();
+    }
+
+    template <typename T>
+    void DoubledMemoryList<T>::resize()
+    {
+        _capacity += DEF_SIZE;
+        if (_capacity > MAX_SIZE) {
+            std::cerr << "Not enought memory\n";
+            return;
+        }
+
+        for (size_t i = 0; i < DEF_SIZE; i++)
+            _d_mem.insert({false, new Node<T>});
+    }
+
+    template <typename T>
+    void DoubledMemoryList<T>::free_node(const Node<T>* node)
+    {
+        auto it = _d_mem.cbegin();
+        while (it != _d_mem.cend())
+        {
+            if (*it == node)
+                it->isused = false;
+            it++;
+        }
+    }
 
     /**
      * Non-blocking queue class
@@ -61,6 +120,7 @@ namespace concurrent
 
         void dequeue(T&);
         void enqueue(const T&);
+        void print();
 
         /**
          * Appends an element to the end of the queue.
@@ -134,20 +194,26 @@ namespace concurrent
     template <typename T>
     void Queue<T>::dequeue(T& item)
     {
-        // while (true)
-        // {
-        //     auto head_next = _head.load(std::memory_order_relaxed)->next.load(std::memory_order_relaxed);
-        //     if (head_next->next)
-        //         return;
+        while (true)
+        {
+            auto head = _head.load(std::memory_order_relaxed);
+            auto head_next = head->next.load(std::memory_order_relaxed);
 
-        //     if (!_head.next.compare_exchange_weak(head_next, head_next->next,
-        //                             std::memory_order_release,
-        //                             std::memory_order_relaxed))
-        //     {
-        //         head_next.store(item);
-        //         return;
-        //     }
-        // }
+            if (head_next)
+                return;
+
+            if (!head->next.compare_exchange_weak(head_next, head_next->next,
+                                    std::memory_order_release,
+                                    std::memory_order_relaxed))
+            {
+                auto tmp = new Node<T>;
+                head->next.store(tmp);
+                item = tmp->data;
+
+                delete tmp;
+                return;
+            }
+        }
     }
 
     template <typename T>
@@ -155,7 +221,6 @@ namespace concurrent
     {
         auto new_tail = new Node<T>(item);
         auto curr_tail = _tail.load(std::memory_order_relaxed);
-        // auto tail_next = curr_tail->next.load(std::memory_order_relaxed);
 
         while (true)
         {
@@ -172,6 +237,21 @@ namespace concurrent
         }
         
         _tail.compare_exchange_strong(curr_tail, new_tail);
+    }
+
+    template <typename T>
+    void Queue<T>::print()
+    {
+        auto head = _head.load(std::memory_order_relaxed);
+        Node<T>* head_next = nullptr;
+
+        while (head)
+        {
+            head_next = head->next.load(std::memory_order_relaxed);
+            std::cout << head->data << " ";
+            head = head_next;
+        }
+        std::cout << std::endl;
     }
 }
 
