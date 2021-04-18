@@ -2,6 +2,7 @@
 #define LOCKFREEQUEUE_HPP
 
 #include <atomic>
+#include <mutex>
 #include <iostream>
 #include <list>
 
@@ -33,6 +34,10 @@ namespace concurrent
     {
         bool isUsed;
         Node<T>* node;
+
+        MemNode<T>() : isUsed(false) {
+            node = new Node<T>;
+        }
     };
 
     /**
@@ -47,11 +52,13 @@ namespace concurrent
         Node<T>* tail_handle;
         Node<T>* head_handle;
         std::list<MemNode<T>*> _d_mem;
+        std::mutex dm;
         size_t _capacity;
     public:
         DoubledMemoryList();
         ~DoubledMemoryList();
 
+        Node<T>* get_node(const T& item);
         Node<T>* get_node();
         void free_node(const Node<T>*);
         void resize();
@@ -63,21 +70,43 @@ namespace concurrent
         tail_handle = new Node<T>;
         head_handle = new Node<T>;
 
-        for (size_t i = 0; i < _capacity; i++)
-            _d_mem.insert({false, new Node<T>});
+        for (size_t i = 0; i < _capacity; i++) {
+            auto tmp = new MemNode<T>;
+            _d_mem.push_back(tmp);
+        }
     }
 
     template <typename T>
     DoubledMemoryList<T>::~DoubledMemoryList(){}
     
     template <typename T>
+    Node<T>* DoubledMemoryList<T>::get_node(const T& item)
+    {
+        auto it = _d_mem.begin();
+        while (it != _d_mem.end())
+            if (!(*it)->isUsed) {
+                std::lock_guard<std::mutex> lock(dm);
+                Node<T>* tmp = (*it)->node;
+                tmp->data = item;
+                return tmp;
+            }
+        
+        resize();
+        return nullptr;
+    }
+
+    template <typename T>
     Node<T>* DoubledMemoryList<T>::get_node()
     {
         auto it = _d_mem.begin();
         while (it != _d_mem.end())
-            if (!it->isUsed)
-                return it->Node;
+            if (!(*it)->isUsed) {
+                std::lock_guard<std::mutex> lock(dm);
+                (*it)->isUsed = true;
+                return (*it)->node;
+            }
         resize();
+        return nullptr;
     }
 
     template <typename T>
@@ -89,8 +118,10 @@ namespace concurrent
             return;
         }
 
-        for (size_t i = 0; i < DEF_SIZE; i++)
-            _d_mem.insert({false, new Node<T>});
+        for (size_t i = 0; i < DEF_SIZE; i++) {
+            auto tmp = new MemNode<T>;
+            _d_mem.push_back(tmp);
+        }
     }
 
     template <typename T>
@@ -99,8 +130,10 @@ namespace concurrent
         auto it = _d_mem.cbegin();
         while (it != _d_mem.cend())
         {
-            if (*it == node)
-                it->isused = false;
+            if ((*it)->node == node) {
+                std::lock_guard<std::mutex> lock(dm);
+                (*it)->isUsed = false;
+            }
             it++;
         }
     }
@@ -113,6 +146,7 @@ namespace concurrent
     {
         std::atomic<Node<T>*> _head;
         std::atomic<Node<T>*> _tail;
+        DoubledMemoryList<T> _pool;
 
     public:
         Queue();
@@ -136,7 +170,7 @@ namespace concurrent
 
     template <typename T>
     Queue<T>::Queue(){
-        auto dummy = new Node<T>();
+        auto dummy = new Node<T>; //_pool.get_node();
         _head.store(dummy, std::memory_order_relaxed);
         _tail.store(dummy, std::memory_order_release);
     }
@@ -196,8 +230,8 @@ namespace concurrent
     {
         while (true)
         {
-            auto head = _head.load(std::memory_order_relaxed);
-            auto head_next = head->next.load(std::memory_order_relaxed);
+            auto head = _head.load(std::memory_order_acquire);
+            auto head_next = head->next.load(std::memory_order_acquire);
 
             if (head_next)
                 return;
@@ -211,6 +245,8 @@ namespace concurrent
                 item = tmp->data;
 
                 delete tmp;
+                _pool.free_node(head_next);
+
                 return;
             }
         }
@@ -224,7 +260,8 @@ namespace concurrent
 
         while (true)
         {
-            if (!curr_tail->next) {
+            auto tail_next = curr_tail->next.load(std::memory_order_relaxed);
+            if (!tail_next) {
                 Node<T>* null_node = nullptr;
                 if (curr_tail->next.compare_exchange_weak(null_node, new_tail,
                                         std::memory_order_release,
